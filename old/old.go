@@ -1,19 +1,16 @@
-package main
+package old
 
 import (
 	"bufio"
 	"bytes"
 	"fmt"
 	"os"
+	"runtime"
 	"sort"
 	"strconv"
+	"strings"
 	"sync"
-)
-
-var (
-	fileChannel = make(chan string)
-	lineChannel = make(chan string)
-	dados       = sync.Map{}
+	"time"
 )
 
 type Measurement struct {
@@ -23,124 +20,142 @@ type Measurement struct {
 	Count int64
 }
 
-func main() {
-	var wg sync.WaitGroup
-	var wg2 sync.WaitGroup
+var (
+	listNames = make(chan string)
+	dados     = sync.Map{}
+)
 
+func main() {
+	start := time.Now()
+	workers := runtime.NumCPU()
+	blockSize := 100 * 1024 * 1024
 	var sortList []string = []string{}
 
-	for i := 0; i < 4; i++ {
+	go readLargeFileFast("measurements100.txt", workers, blockSize)
+
+	wg := sync.WaitGroup{}
+	for location := range listNames {
 		wg.Add(1)
-		go func() {
+		go func(location string) {
 			defer wg.Done()
-			for v := range fileChannel {
-				lines := bytes.Split([]byte(v), []byte("\n"))
-				for _, lineB := range lines {
-					// lineChannel <- strings.Split(string(line), ";")
-					line := string(lineB)
-
-					var location string
-					var temp string
-					var fimLocation bool
-					for _, word := range line {
-						if word == ';' {
-							fimLocation = true
-							continue
-						}
-
-						if !fimLocation {
-							getRuneAndConcatenate(word, &location)
-						} else {
-							getRuneAndConcatenate(word, &temp)
-						}
-					}
-
-					if m, ok := dados.Load(location); !ok {
-						tempFloat, _ := strconv.ParseFloat(temp, 64)
-						dados.Store(location, &Measurement{
-							Min:   tempFloat,
-							Max:   tempFloat,
-							Sum:   tempFloat,
-							Count: 1,
-						})
-						lineChannel <- location
-					} else {
-						tempFloat, _ := strconv.ParseFloat(temp, 64)
-
-						m := m.(*Measurement)
-						m.Min = min(m.Min, tempFloat)
-						m.Max = max(m.Max, tempFloat)
-						m.Sum += tempFloat
-						m.Count++
-					}
-				}
-			}
-		}()
+			sortList = append(sortList, location)
+		}(location)
 	}
-
-	for i := 0; i < 4; i++ {
-		wg2.Add(1)
-		go func() {
-			defer wg2.Done()
-			for v := range lineChannel {
-				sortList = append(sortList, v)
-			}
-		}()
-	}
+	wg.Wait()
 
 	parallelSort(sortList, 4)
 
-	err := ReadFile("measurements.txt", 2*1024*1024)
-	if err != nil {
-		fmt.Println(err)
-		return
-	}
+	fmt.Printf("{")
+	for _, location := range sortList {
+		value, ok := dados.Load(location)
 
-	wg.Wait()
-	close(lineChannel)
-	wg2.Wait()
-
-	for _, v := range sortList {
-		value, ok := dados.Load(v)
 		if !ok {
 			fmt.Println("Erro ao carregar valor")
 			continue
 		}
 		m := value.(*Measurement)
-		fmt.Printf("%s=%.1f/%.1f/%.1f, ", v, m.Min, m.Max, m.Sum/float64(m.Count))
+		fmt.Printf("%s=%.1f/%.1f/%.1f, ", location, m.Min, m.Max, m.Sum/float64(m.Count))
 	}
+	fmt.Printf("}\n")
 
+	fmt.Println("Tempo de execução: ", time.Since(start))
 }
 
 func getRuneAndConcatenate(word rune, str *string) {
 	*str += string(word)
 }
 
-func ReadFile(path string, blockSize int) error {
-	file, err := os.Open(path)
+func readLargeFileFast(filePath string, workers int, blockSize int) error {
+	file, err := os.Open(filePath)
 	if err != nil {
 		return fmt.Errorf("erro ao abrir o arquivo: %w", err)
 	}
 	defer file.Close()
 
+	// Canal para enviar blocos para os workers
+	blocks := make(chan []byte, workers)
+
+	// WaitGroup para sincronizar as goroutines
+	var wg sync.WaitGroup
+
+	// Inicia workers para processar blocos
+	for i := 0; i < workers; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for block := range blocks {
+				processBlock(block)
+			}
+		}()
+	}
+
+	// Ler o arquivo em blocos grandes
 	buf := make([]byte, blockSize)
 	reader := bufio.NewReader(file)
-
 	for {
 		n, err := reader.Read(buf)
 		if n > 0 {
+			// Faz uma cópia do bloco lido para evitar problemas de sobrescrita
 			block := make([]byte, n)
 			copy(block, buf[:n])
-			fileChannel <- string(block)
+			blocks <- block
 		}
 		if err != nil {
 			break
 		}
 	}
 
-	close(fileChannel)
+	close(blocks) // Fecha o canal após terminar a leitura
+	close(listNames)
+	wg.Wait() // Aguarda os workers terminarem
 
 	return nil
+}
+
+func processBlock(block []byte) {
+	lines := bytes.Split(block, []byte("\n"))
+	for _, line := range lines {
+		processLine(string(line))
+	}
+}
+
+func processLine(line string) {
+	line = strings.TrimSpace(line)
+
+	var location string
+	var temp string
+	var fimLocation bool
+	for _, word := range line {
+		if word == ';' {
+			fimLocation = true
+			continue
+		}
+
+		if !fimLocation {
+			getRuneAndConcatenate(word, &location)
+		} else {
+			getRuneAndConcatenate(word, &temp)
+		}
+	}
+
+	if m, ok := dados.Load(location); !ok {
+		tempFloat, _ := strconv.ParseFloat(temp, 64)
+		dados.Store(location, &Measurement{
+			Min:   tempFloat,
+			Max:   tempFloat,
+			Sum:   tempFloat,
+			Count: 1,
+		})
+		listNames <- location
+	} else {
+		tempFloat, _ := strconv.ParseFloat(temp, 64)
+
+		m := m.(*Measurement)
+		m.Min = min(m.Min, tempFloat)
+		m.Max = max(m.Max, tempFloat)
+		m.Sum += tempFloat
+		m.Count++
+	}
 
 }
 
