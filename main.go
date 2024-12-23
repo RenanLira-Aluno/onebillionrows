@@ -8,6 +8,7 @@ import (
 	"sort"
 	"strconv"
 	"sync"
+	"time"
 )
 
 var (
@@ -24,6 +25,7 @@ type Measurement struct {
 }
 
 func main() {
+	start := time.Now()
 	var wg sync.WaitGroup
 	var wg2 sync.WaitGroup
 
@@ -36,7 +38,6 @@ func main() {
 			for v := range fileChannel {
 				lines := bytes.Split([]byte(v), []byte("\n"))
 				for _, lineB := range lines {
-					// lineChannel <- strings.Split(string(line), ";")
 					line := string(lineB)
 
 					var location string
@@ -88,18 +89,19 @@ func main() {
 		}()
 	}
 
-	parallelSort(sortList, 4)
-
+	
 	err := ReadFile("measurements.txt", 2*1024*1024)
 	if err != nil {
 		fmt.Println(err)
 		return
 	}
-
+	
 	wg.Wait()
 	close(lineChannel)
 	wg2.Wait()
 
+	parallelSort(sortList, 4)
+	
 	for _, v := range sortList {
 		value, ok := dados.Load(v)
 		if !ok {
@@ -109,6 +111,8 @@ func main() {
 		m := value.(*Measurement)
 		fmt.Printf("%s=%.1f/%.1f/%.1f, ", v, m.Min, m.Max, m.Sum/float64(m.Count))
 	}
+
+	fmt.Println("Tempo de execução: ", time.Since(start))
 
 }
 
