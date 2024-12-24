@@ -11,7 +11,7 @@ import (
 )
 
 var (
-	fileChannel = make(chan string)
+	fileChannel = make(chan []byte)
 	lineChannel = make(chan string)
 	dados       = sync.Map{}
 )
@@ -35,8 +35,8 @@ func main() {
 		go func() {
 			defer wg.Done()
 			for v := range fileChannel {
-				var location string
-				var temp string
+				var location []byte
+				var temp []byte
 				var fimLocation bool
 
 				for _, word := range v {
@@ -48,17 +48,19 @@ func main() {
 
 					if word == '\n' {
 						fimLocation = false
-						if m, ok := dados.Load(location); !ok {
-							tempFloat, _ := strconv.ParseFloat(temp, 64)
-							dados.Store(location, &Measurement{
+						tempS := string(temp)
+						locationS := string(location)
+						if m, ok := dados.Load(locationS); !ok {
+							tempFloat, _ := strconv.ParseFloat(tempS, 64)
+							dados.Store(locationS, &Measurement{
 								Min:   tempFloat,
 								Max:   tempFloat,
 								Sum:   tempFloat,
 								Count: 1,
 							})
-							sortList = append(sortList, location)
+							sortList = append(sortList, locationS)
 						} else {
-							tempFloat, _ := strconv.ParseFloat(temp, 64)
+							tempFloat, _ := strconv.ParseFloat(tempS, 64)
 
 							m := m.(*Measurement)
 							m.Min = min(m.Min, tempFloat)
@@ -67,16 +69,16 @@ func main() {
 							m.Count++
 						}
 
-						location = ""
-						temp = ""
+						location = []byte{}
+						temp = []byte{}
 
 						continue
 					}
 
 					if !fimLocation {
-						getRuneAndConcatenate(word, &location)
+						location = append(location, word)
 					} else {
-						getRuneAndConcatenate(word, &temp)
+						temp = append(temp, word)
 					}
 				}
 			}
@@ -105,9 +107,6 @@ func main() {
 
 }
 
-func getRuneAndConcatenate(word rune, str *string) {
-	*str += string(word)
-}
 
 func ReadFile(path string, blockSize int) error {
 	file, err := os.Open(path)
@@ -124,7 +123,7 @@ func ReadFile(path string, blockSize int) error {
 		if n > 0 {
 			block := make([]byte, n)
 			copy(block, buf[:n])
-			fileChannel <- string(block)
+			fileChannel <- block
 		}
 		if err != nil {
 			break
