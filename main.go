@@ -2,7 +2,6 @@ package main
 
 import (
 	"bufio"
-	"bytes"
 	"fmt"
 	"os"
 	"sort"
@@ -31,83 +30,73 @@ func main() {
 
 	var sortList []string = []string{}
 
-	for i := 0; i < 4; i++ {
+	for i := 0; i < 8; i++ {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
 			for v := range fileChannel {
-				lines := bytes.Split([]byte(v), []byte("\n"))
-				for _, lineB := range lines {
-					line := string(lineB)
+				var location string
+				var temp string
+				var fimLocation bool
 
-					var location string
-					var temp string
-					var fimLocation bool
-					for _, word := range line {
-						if word == ';' {
-							fimLocation = true
-							continue
-						}
+				for _, word := range v {
 
-						if !fimLocation {
-							getRuneAndConcatenate(word, &location)
-						} else {
-							getRuneAndConcatenate(word, &temp)
-						}
+					if word == ';' {
+						fimLocation = true
+						continue
 					}
 
-					if m, ok := dados.Load(location); !ok {
-						tempFloat, _ := strconv.ParseFloat(temp, 64)
-						dados.Store(location, &Measurement{
-							Min:   tempFloat,
-							Max:   tempFloat,
-							Sum:   tempFloat,
-							Count: 1,
-						})
-						lineChannel <- location
-					} else {
-						tempFloat, _ := strconv.ParseFloat(temp, 64)
+					if word == '\n' {
+						fimLocation = false
+						if m, ok := dados.Load(location); !ok {
+							tempFloat, _ := strconv.ParseFloat(temp, 64)
+							dados.Store(location, &Measurement{
+								Min:   tempFloat,
+								Max:   tempFloat,
+								Sum:   tempFloat,
+								Count: 1,
+							})
+							sortList = append(sortList, location)
+						} else {
+							tempFloat, _ := strconv.ParseFloat(temp, 64)
 
-						m := m.(*Measurement)
-						m.Min = min(m.Min, tempFloat)
-						m.Max = max(m.Max, tempFloat)
-						m.Sum += tempFloat
-						m.Count++
+							m := m.(*Measurement)
+							m.Min = min(m.Min, tempFloat)
+							m.Max = max(m.Max, tempFloat)
+							m.Sum += tempFloat
+							m.Count++
+						}
+
+						location = ""
+						temp = ""
+
+						continue
+					}
+
+					if !fimLocation {
+						getRuneAndConcatenate(word, &location)
+					} else {
+						getRuneAndConcatenate(word, &temp)
 					}
 				}
 			}
 		}()
 	}
 
-	for i := 0; i < 4; i++ {
-		wg2.Add(1)
-		go func() {
-			defer wg2.Done()
-			for v := range lineChannel {
-				sortList = append(sortList, v)
-			}
-		}()
-	}
-
-	
-	err := ReadFile("measurements.txt", 2*1024*1024)
+	err := ReadFile("measurements1B.txt", 2*1024*1024)
 	if err != nil {
 		fmt.Println(err)
 		return
 	}
-	
+
 	wg.Wait()
 	close(lineChannel)
 	wg2.Wait()
 
 	parallelSort(sortList, 4)
-	
+
 	for _, v := range sortList {
-		value, ok := dados.Load(v)
-		if !ok {
-			fmt.Println("Erro ao carregar valor")
-			continue
-		}
+		value, _ := dados.Load(v)
 		m := value.(*Measurement)
 		fmt.Printf("%s=%.1f/%.1f/%.1f, ", v, m.Min, m.Max, m.Sum/float64(m.Count))
 	}
