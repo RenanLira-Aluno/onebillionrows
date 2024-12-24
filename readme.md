@@ -8,12 +8,11 @@ O desafio "One Billion Rows" consiste em processar e analisar um conjunto de dad
 
 ### Desempenho
 
-- **Tempo total de processamento:** 4m53s
+- **Tempo total de processamento:** 1m6s
 
 ### Análise dos Dados
 
 - **Total de linhas processadas:** 1.000.000.000
-
 
 ## Tecnologias Utilizadas
 
