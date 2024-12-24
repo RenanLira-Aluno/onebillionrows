@@ -51,4 +51,4 @@ Contribuições são bem-vindas! Sinta-se à vontade para abrir issues e pull re
 
 ## Contato
 
-Para mais informações, entre em contato pelo e-mail: [mailto:renanalmeida2015.ra@gmail.com](renanalmeida2015.ra@gmail.com)
+Para mais informações, entre em contato pelo e-mail: [renanalmeida2015.ra@gmail.com](mailto:renanalmeida2015.ra@gmail.com)
